@@ -8,13 +8,13 @@ import (
 )
 
 type Pool struct {
-	lock sync.RWMutex
+	lock      sync.RWMutex
 	maxActive int
 	maxIdle   int
 	new       func() io.Closer
 	active    chan int
 	pool      chan io.Closer
-	closed bool
+	closed    bool
 }
 
 // New create a new pool. Factory function will be called when there is no item
@@ -39,7 +39,7 @@ func New(factory func() io.Closer, maxActive, maxIdle int) (*Pool, error) {
 		new:       factory,
 		active:    make(chan int, maxActive),
 		pool:      make(chan io.Closer, maxIdle),
-		closed: false,
+		closed:    false,
 	}, nil
 }
 
@@ -49,7 +49,9 @@ func New(factory func() io.Closer, maxActive, maxIdle int) (*Pool, error) {
 func (p *Pool) Get(ctx context.Context) (io.Closer, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	if p.closed {return nil, errors.New("pool is closed")}
+	if p.closed {
+		return nil, errors.New("pool is closed")
+	}
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -82,7 +84,7 @@ func (p *Pool) Put(item io.Closer) {
 	}
 
 	select {
-	case <- p.active:
+	case <-p.active:
 	default:
 	}
 }
@@ -92,9 +94,11 @@ func (p *Pool) Put(item io.Closer) {
 func (p *Pool) Release() {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	if p.closed {return}
+	if p.closed {
+		return
+	}
 	select {
-	case <- p.active:
+	case <-p.active:
 	default:
 	}
 }
@@ -103,13 +107,15 @@ func (p *Pool) Release() {
 func (p *Pool) Close() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if p.closed {return}
+	if p.closed {
+		return
+	}
 	p.closed = true
 
 outer:
 	for {
 		select {
-		case item := <- p.pool:
+		case item := <-p.pool:
 			_ = item.Close()
 		default:
 			break outer
@@ -120,11 +126,18 @@ outer:
 	close(p.active)
 }
 
+// IsClosed return true if the pool is closed and false otherwise.
+func (p *Pool) IsClosed() bool {
+	return p.closed
+}
+
 // Fill the pool to max size.
 func (p *Pool) Fill() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if p.closed {return}
+	if p.closed {
+		return
+	}
 	for i := len(p.pool); i != p.maxIdle; i++ {
 		p.pool <- p.new()
 	}
@@ -134,12 +147,14 @@ func (p *Pool) Fill() {
 func (p *Pool) Clear() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if p.closed {return}
+	if p.closed {
+		return
+	}
 
 outer:
 	for {
 		select {
-		case item := <- p.pool:
+		case item := <-p.pool:
 			_ = item.Close()
 		default:
 			break outer
