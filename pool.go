@@ -11,7 +11,7 @@ type Pool struct {
 	lock      sync.RWMutex
 	maxActive int
 	maxIdle   int
-	new       func() io.Closer
+	new       func() (io.Closer, error)
 	active    chan int
 	pool      chan io.Closer
 	closed    bool
@@ -23,7 +23,7 @@ type Pool struct {
 // maxActive in that case.
 //
 // The pool will not be filled when created, use Fill() to fill the pool.
-func New(factory func() io.Closer, maxActive, maxIdle int) (*Pool, error) {
+func New(factory func() (io.Closer, error), maxActive, maxIdle int) (*Pool, error) {
 	if maxActive <= 0 {
 		return nil, errors.New("max active must be positive")
 	}
@@ -56,15 +56,15 @@ func (p *Pool) Get(ctx context.Context) (io.Closer, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case p.active <- 1:
-		return p.takeOrCreate(), nil
+		return p.takeOrCreate()
 	}
 }
 
-func (p *Pool) takeOrCreate() (item io.Closer) {
+func (p *Pool) takeOrCreate() (item io.Closer, err error) {
 	select {
 	case item = <-p.pool:
 	default:
-		item = p.new()
+		item, err = p.new()
 	}
 	return
 }
@@ -131,7 +131,7 @@ func (p *Pool) IsClosed() bool {
 	return p.closed
 }
 
-// Fill the pool to max size.
+// Fill the pool [maxIdle - len(pool)] times.
 func (p *Pool) Fill() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -139,7 +139,9 @@ func (p *Pool) Fill() {
 		return
 	}
 	for i := len(p.pool); i != p.maxIdle; i++ {
-		p.pool <- p.new()
+		if item, err := p.new(); err == nil {
+			p.pool <- item
+		}
 	}
 }
 
