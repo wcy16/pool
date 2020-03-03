@@ -1,8 +1,10 @@
 # Concurrent Pool
 
-This is an implementation of a concurrent pool. Different from sync.Pool, the pool has a fix size.
+This is an implementation of a fixed size concurrent pool.
 
 ## Usage
+
+The items in the pool must implement _io.Closer_ interface.
 
 ```go
     p, _ := pool.New(factory, 10, 5)   // create a pool
